@@ -239,13 +239,13 @@
     { key:'tori', name:'Tori', trait:'Tall • light-brown skin, dark-brown hair, brown eyes',
       skin:'#c58a5c', shade:'#a86f45', hair:'#3a2416', hair2:'#4d3220', eye:'#5a3a1e',
       dress:'#b7d8ff', dress2:'#7fb0ef', scale:1.10 },
-    { key:'belle', name:'Belle', trait:'A bit shorter • fair skin, long blonde hair, blue-green eyes',
+    { key:'eva', name:'Eva', trait:'A bit shorter • fair skin, long blonde hair, blue-green eyes',
       skin:'#ffe1c4', shade:'#f0c4a0', hair:'#efd074', hair2:'#f8e29a', eye:'#2f9f9a',
       dress:'#ffcfe6', dress2:'#ff97c4', scale:1.00 },
-    { key:'fern', name:'Fern', trait:'Short • long light-brown hair, green eyes',
+    { key:'leia', name:'Leia', trait:'Short • long light-brown hair, green eyes',
       skin:'#f6cda4', shade:'#e6b184', hair:'#b58a54', hair2:'#c99c64', eye:'#3f9d43',
       dress:'#c8f6d8', dress2:'#82dfab', scale:0.90 },
-    { key:'skye', name:'Skye', trait:'Kind of tall • long blonde hair, greenish-blue eyes',
+    { key:'savannah', name:'Savannah', trait:'Kind of tall • long blonde hair, greenish-blue eyes',
       skin:'#ffe0c6', shade:'#f2c6a4', hair:'#f4da86', hair2:'#fce8a6', eye:'#2aa6b6',
       dress:'#e6d0ff', dress2:'#c3a4f0', scale:1.05 },
   ];
@@ -478,8 +478,7 @@
     g.save(); g.translate(52,120); g.scale(1.35,1.35); drawCharacter(g,ch,0.6,false); g.restore();
     card.appendChild(cv);
     const nm=document.createElement('div'); nm.className='pname'; nm.textContent=ch.name;
-    const tr=document.createElement('div'); tr.className='ptrait'; tr.textContent=ch.trait;
-    card.appendChild(nm); card.appendChild(tr);
+    card.appendChild(nm);
     card.onclick=()=>{ chosen=ch; document.querySelectorAll('.pick').forEach(p=>p.classList.remove('sel'));
       card.classList.add('sel'); $('beginBtn').disabled=false; Sound.ensure(); };
     grid.appendChild(card);
