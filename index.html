@@ -80,6 +80,7 @@
       <span id="score">0</span><span style="opacity:.7">/</span><span id="total">0</span>
     </div>
     <div class="stat" style="opacity:.95">🏰 <span id="level">—</span></div>
+    <div class="stat" style="opacity:.95">⏱ <span id="timer" style="font-variant-numeric:tabular-nums">0.0s</span></div>
     <div id="muteBtn" title="Mute / unmute">🔊</div>
   </div>
 </div>
@@ -328,7 +329,7 @@
   // ============================================================= LEVELS
   const LEVELS = [
     {
-      name: 'Divinia Park', theme: 'divinia', music: 'divinia', worldW: 3200, spawn:{x:120,y:440},
+      name: 'Divinia Park', theme: 'divinia', music: 'divinia', worldW: 3200, spawn:{x:120,y:440}, par: 55,
       platforms: [
         {x:0,y:540,w:420,h:60},{x:520,y:470,w:180,h:34},{x:770,y:390,w:150,h:30},
         {x:980,y:470,w:150,h:30},{x:1180,y:360,w:150,h:30},{x:1380,y:300,w:140,h:28},
@@ -342,7 +343,7 @@
       landmark:'fountain', landmarkPos:{x:1820,y:560}, crown:{x:3040,y:470},
     },
     {
-      name: 'Fantasia', theme: 'fantasia', music: 'fantasia', worldW: 3200, spawn:{x:110,y:420},
+      name: 'Fantasia', theme: 'fantasia', music: 'fantasia', worldW: 3200, spawn:{x:110,y:420}, par: 60,
       platforms: [
         {x:0,y:520,w:380,h:80},{x:470,y:440,w:170,h:40},{x:700,y:360,w:150,h:40},
         {x:900,y:280,w:140,h:38},{x:1120,y:360,w:150,h:40},{x:1330,y:300,w:150,h:38},
@@ -358,10 +359,48 @@
   ];
 
   // ============================================================= STATE
-  const G = 2400, MOVE = 520, JUMP = 850, COYOTE = 0.10, BUFFER = 0.12;
+  const G = 2400, MOVE = 520, JUMP = 1040, COYOTE = 0.10, BUFFER = 0.12;
   let state = 'menu', levelIdx = 0, L = LEVELS[0];
   let platforms = [], diamonds = [], worldW = 3200;
   let score = 0, camX = 0, camY = 0, t = 0, combo = 0;
+  let levelTime = 0, bank = 0;   // per-realm timer + lifetime diamond treasury
+
+  // Persistent best times per realm (falls back to in-memory if storage is blocked)
+  const Store = { mem:{},
+    get(k){ try{ const v=localStorage.getItem(k); return v==null ? (k in this.mem?this.mem[k]:null) : v; }
+            catch(e){ return (k in this.mem?this.mem[k]:null); } },
+    set(k,v){ this.mem[k]=v; try{ localStorage.setItem(k,v); }catch(e){} } };
+  const fmt = s => `${s.toFixed(1)}s`;
+
+  function awardBonuses(idx, time){
+    const par = LEVELS[idx].par, key = 'toriland.best.'+idx;
+    const prev = parseFloat(Store.get(key)), hadPrev = !isNaN(prev);
+    const isRecord = !hadPrev || time < prev;
+    if(isRecord) Store.set(key, time.toFixed(2));
+    let speedBonus = 0, tier = 'Leisurely';
+    if(time <= par*0.6){ speedBonus = 5; tier = 'Radiant'; }
+    else if(time <= par){ speedBonus = 3; tier = 'Swift'; }
+    else if(time <= par*1.4){ speedBonus = 1; tier = 'Steady'; }
+    const recordBonus = (isRecord && hadPrev) ? 3 : 0;   // reward for BEATING an existing record
+    return { hadPrev, isRecord, best: hadPrev?prev:null, tier, speedBonus, recordBonus, total: speedBonus+recordBonus };
+  }
+  function resultHTML(res, time){
+    let rec;
+    if(!res.hadPrev)      rec = `🏆 <b>First clear!</b>`;
+    else if(res.isRecord) rec = `🏆 <b>New record!</b> <span style="opacity:.75">(was ${fmt(res.best)})</span>`;
+    else                  rec = `Best: <b>${fmt(res.best)}</b>`;
+    const parts = [];
+    if(res.speedBonus) parts.push(`+${res.speedBonus} for a <b>${res.tier}</b> run`);
+    if(res.recordBonus) parts.push(`+${res.recordBonus} record bonus`);
+    const bonusLine = res.total
+      ? `Bonus: <b>+${res.total} 💎</b> <span style="opacity:.8">(${parts.join(' · ')})</span>`
+      : `No time bonus — be quicker next run for extra diamonds!`;
+    return `<div style="line-height:1.75">
+        ⏱ Time: <b>${fmt(time)}</b> &nbsp;·&nbsp; ${rec}<br>
+        ${bonusLine}<br>
+        👛 Treasury: <b>${bank} 💎</b>
+      </div>`;
+  }
 
   const player = { x:120,y:440,w:34,h:52,vx:0,vy:0,onGround:false,face:1,coyote:0,buffer:0,anim:0,wasAir:false };
   const particles = [], jets = [], decoA = [], decoB = [], skyline = [];
@@ -385,6 +424,7 @@
     document.getElementById('total').textContent=diamonds.length;
     document.getElementById('level').textContent=L.name;
     score=0; combo=0; document.getElementById('score').textContent='0';
+    levelTime=0; document.getElementById('timer').textContent=fmt(0);
     particles.length=0;
     // sizes from chosen character
     player.h=Math.round(52*chosen.scale); player.w=34;
@@ -452,21 +492,26 @@
   $('muteBtn').onclick=()=>{ const on=Sound.setMute($('muteBtn').textContent==='🔊'); $('muteBtn').textContent=on?'🔊':'🔇'; };
 
   function startGame(){
-    loadLevel(0); state='play';
+    bank=0; loadLevel(0); state='play';
     show('hud'); show('touch'); Sound.startMusic(L.music);
   }
   function levelClear(){
+    const time = levelTime;
+    const res = awardBonuses(levelIdx, time);
+    bank += score + res.total;                 // diamonds collected this realm + time/record bonuses
+    const results = resultHTML(res, time);
     if(levelIdx < LEVELS.length-1){
       state='levelup'; Sound.complete(); Sound.fadeMusic();
       $('luTitle').textContent='Realm Cleared! ✨';
-      $('luMsg').textContent=`You gathered every diamond in ${L.name}. A new realm awaits: `+
-        `${LEVELS[levelIdx+1].name} — a seasonal fairy forest.`;
+      $('luMsg').innerHTML = results +
+        `<div style="margin-top:10px">A new realm awaits: <b>${LEVELS[levelIdx+1].name}</b>.</div>`;
       $('nextBtn').textContent=`Enter ${LEVELS[levelIdx+1].name} →`;
       show('levelup');
     } else {
       state='win'; Sound.fanfare(); Sound.fadeMusic();
-      $('winMsg').textContent=`You cleared every realm of Tori-land as ${chosen.name} and gathered all the diamonds. `+
-        `A radiant crown is yours. 👑`;
+      $('winMsg').innerHTML = results +
+        `<div style="margin-top:10px">You cleared every realm of Tori-land as <b>${chosen.name}</b> `+
+        `with <b>${bank} 💎</b> in your treasury. A radiant crown is yours. 👑</div>`;
       show('win');
     }
   }
@@ -482,6 +527,8 @@
       if(p.life>=p.max){particles.splice(i,1);continue;} p.vy+=800*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; }
 
     if(state!=='play') return;
+
+    levelTime += dt; $('timer').textContent = fmt(levelTime);
 
     const dir=(keys.right?1:0)-(keys.left?1:0);
     player.vx=dir*MOVE; if(dir) player.face=dir;
